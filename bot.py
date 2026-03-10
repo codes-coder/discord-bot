@@ -227,22 +227,42 @@ async def cooldown(interaction: discord.Interaction):
             embed.add_field(name=cmd.capitalize(), value="Ready ✅", inline=True)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# -------- Leaderboard --------
-@tree.command(name="leaderboard", description="See server leaderboard by wallet + bank")
-async def leaderboard(interaction: discord.Interaction):
+# -------- Leaderboards --------
+# Server leaderboard - top 10 richest users in this server
+@tree.command(name="leaderboard_server", description="Top 10 richest users in this server")
+async def leaderboard_server(interaction: discord.Interaction):
     guild = interaction.guild
     entries = []
-    for member in guild.members:
-        if member.bot:
-            continue
-        uid = str(member.id)
-        if uid in data:
-            total_money = data[uid]["wallet"] + data[uid]["bank"]
-            entries.append((member.name, total_money))
+    for uid, info in data.items():
+        member = guild.get_member(int(uid))
+        if member and not member.bot:
+            total = info["wallet"] + info["bank"]
+            entries.append((member.display_name, total))
     entries.sort(key=lambda x: x[1], reverse=True)
-    embed = discord.Embed(title="💰 Server Leaderboard", color=discord.Color.gold())
-    for i, (name, amount) in enumerate(entries[:10], start=1):
-        embed.add_field(name=f"{i}. {name}", value=f"{amount:,} moneh", inline=False)
+    embed = discord.Embed(title=f"💰 Server Leaderboard - {guild.name}", color=discord.Color.gold())
+    if entries:
+        for i, (name, amount) in enumerate(entries[:10], start=1):
+            embed.add_field(name=f"{i}. {name}", value=f"{amount:,} moneh", inline=False)
+    else:
+        embed.description = "No data found!"
+    await interaction.response.send_message(embed=embed)
+
+# Global leaderboard - top 10 richest users across all servers
+@tree.command(name="leaderboard_global", description="Top 10 richest users globally")
+async def leaderboard_global(interaction: discord.Interaction):
+    entries = []
+    for uid, info in data.items():
+        total = info["wallet"] + info["bank"]
+        entries.append((uid, total))
+    entries.sort(key=lambda x: x[1], reverse=True)
+    embed = discord.Embed(title="🌎 Global Leaderboard", color=discord.Color.gold())
+    if entries:
+        for i, (uid, amount) in enumerate(entries[:10], start=1):
+            user = bot.get_user(int(uid))
+            name = user.name if user else f"User ID {uid}"
+            embed.add_field(name=f"{i}. {name}", value=f"{amount:,} moneh", inline=False)
+    else:
+        embed.description = "No data found!"
     await interaction.response.send_message(embed=embed)
 
 # -------- On Ready --------
