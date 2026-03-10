@@ -49,6 +49,19 @@ def get_user(uid):
         save_data()
     return data[uid]
 
+# Convert seconds to H M S format for cooldowns
+def format_cooldown(seconds):
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, secs = divmod(remainder, 60)
+    parts = []
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0:
+        parts.append(f"{secs}s")
+    return " ".join(parts) if parts else "Ready ✅"
+
 def check_cooldown(uid, cmd, cd_seconds):
     user = get_user(uid)
     last = user["cooldowns"].get(cmd)
@@ -70,7 +83,7 @@ async def give_money_embed(interaction, min_amount, max_amount, cmd, cd_seconds,
     if remaining > 0:
         embed = discord.Embed(
             title=f"{cmd.capitalize()} Cooldown ⏱",
-            description=f"You must wait **{remaining} seconds** to use this command again.",
+            description=f"You must wait **{format_cooldown(remaining)}** to use this command again.",
             color=discord.Color.orange()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -167,7 +180,7 @@ async def rob(interaction: discord.Interaction, member: discord.Member):
     target_uid = member.id
     remaining = check_cooldown(uid, "rob", 7200)
     if remaining > 0:
-        embed = discord.Embed(title="⏱ Rob Cooldown", description=f"You must wait {remaining}s to rob someone.", color=discord.Color.orange())
+        embed = discord.Embed(title="⏱ Rob Cooldown", description=f"You must wait {format_cooldown(remaining)} to rob someone.", color=discord.Color.orange())
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     user = get_user(uid)
@@ -209,13 +222,13 @@ async def cooldown(interaction: discord.Interaction):
     for cmd, cd in cd_times.items():
         remaining = check_cooldown(uid, cmd, cd)
         if remaining > 0:
-            embed.add_field(name=cmd.capitalize(), value=f"{remaining}s left", inline=True)
+            embed.add_field(name=cmd.capitalize(), value=f"{format_cooldown(remaining)} left", inline=True)
         else:
             embed.add_field(name=cmd.capitalize(), value="Ready ✅", inline=True)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # -------- Leaderboard --------
-@tree.command(name="leaderboard", description="See server leaderboard by wallet")
+@tree.command(name="leaderboard", description="See server leaderboard by wallet + bank")
 async def leaderboard(interaction: discord.Interaction):
     guild = interaction.guild
     entries = []
@@ -224,11 +237,12 @@ async def leaderboard(interaction: discord.Interaction):
             continue
         uid = str(member.id)
         if uid in data:
-            entries.append((member.name, data[uid]["wallet"]))
+            total_money = data[uid]["wallet"] + data[uid]["bank"]
+            entries.append((member.name, total_money))
     entries.sort(key=lambda x: x[1], reverse=True)
     embed = discord.Embed(title="💰 Server Leaderboard", color=discord.Color.gold())
     for i, (name, amount) in enumerate(entries[:10], start=1):
-        embed.add_field(name=f"{i}. {name}", value=f"{amount} moneh", inline=False)
+        embed.add_field(name=f"{i}. {name}", value=f"{amount:,} moneh", inline=False)
     await interaction.response.send_message(embed=embed)
 
 # -------- On Ready --------
