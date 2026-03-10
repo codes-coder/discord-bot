@@ -104,4 +104,4 @@ async def on_ready():
     print(f"Bot online as {bot.user}")
 
 
-bot.run("MTQ4MDc2MDk1MDM1NjQ0MzI2Ng.GdHGch.a0j4I-8V8y9laGHdJ4b-SdidBRP0fcwiJlJMe0")
+bot.run("MTQ4MDc2MDk1MDM1NjQ0MzI2Ng.G9QDpG.ed3Cq-DytDIhoDvzHja2sgb6_RBGEcR_njbl5c")
