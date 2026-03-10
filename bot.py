@@ -1,4 +1,4 @@
-import discord
+ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 # -------- Bot Setup --------
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # Needed for guild.get_member
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree  # For slash commands
 
@@ -89,11 +90,22 @@ async def give_money_embed(interaction, min_amount, max_amount, cmd, cd_seconds,
         return
     if fail_chance and random.randint(1,100) <= fail_chance:
         set_cooldown(uid, cmd)
-        embed = discord.Embed(
-            title=f"{cmd.capitalize()} Failed ❌",
-            description=f"You got nothing this time.",
-            color=discord.Color.red()
-        )
+        if cmd == "crime":  # deduct random 2500-5000 on fail
+            lost_amount = random.randint(2500, 5000)
+            user = get_user(uid)
+            user["wallet"] -= lost_amount
+            save_data()
+            embed = discord.Embed(
+                title=f"{cmd.capitalize()} Failed ❌",
+                description=f"You failed the {cmd} and lost **{lost_amount} moneh**!\n💰 Wallet may go negative!",
+                color=discord.Color.red()
+            )
+        else:
+            embed = discord.Embed(
+                title=f"{cmd.capitalize()} Failed ❌",
+                description=f"You got nothing this time.",
+                color=discord.Color.red()
+            )
         await interaction.response.send_message(embed=embed)
         return
     amount = random.randint(min_amount, max_amount)
@@ -121,30 +133,9 @@ async def work(interaction: discord.Interaction):
 async def beg(interaction: discord.Interaction):
     await give_money_embed(interaction, 750, 7500, "beg", 600, fail_chance=20)
 
-# -------- Crime Command (deduct 2500–5000 on fail, wallet can go negative) --------
 @tree.command(name="crime", description="Do a risky crime (10% fail, every 30 min)")
 async def crime(interaction: discord.Interaction):
-    uid = interaction.user.id
-    remaining = check_cooldown(uid, "crime", 1800)
-    if remaining > 0:
-        embed = discord.Embed(title="⏱ Crime Cooldown", description=f"You must wait {format_cooldown(remaining)} to commit a crime.", color=discord.Color.orange())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-    chance = random.randint(1,100)
-    user = get_user(uid)
-    if chance <= 90:  # success
-        amount = random.randint(1500, 30000)
-        user["wallet"] += amount
-        set_cooldown(uid, "crime")
-        save_data()
-        embed = discord.Embed(title="💰 Crime Success!", description=f"You successfully committed a crime and earned **{amount} moneh**!\n💰 Wallet: {user['wallet']}", color=discord.Color.green())
-    else:  # fail
-        lost = random.randint(1000, 5000)
-        user["wallet"] -= lost  # wallet can go negative
-        set_cooldown(uid, "crime")
-        save_data()
-        embed = discord.Embed(title="❌ Crime Failed!", description=f"You were caught and fined **{lost} moneh**.\n💰 Wallet may go negative: {user['wallet']}", color=discord.Color.red())
-    await interaction.response.send_message(embed=embed)
+    await give_money_embed(interaction, 1500, 30000, "crime", 1800, fail_chance=10)
 
 @tree.command(name="search", description="Search for moneh (every 15 min)")
 async def search(interaction: discord.Interaction):
@@ -216,13 +207,12 @@ async def rob(interaction: discord.Interaction, member: discord.Member):
         embed = discord.Embed(title="💰 Rob Success!", description=f"You successfully robbed {member.name} and stole **{stolen} moneh**!", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
     else:  # failed
-        percent = random.randint(1,5)
-        lost = int(user["wallet"] * percent / 100)
-        user["wallet"] -= lost
+        lost = random.randint(2500,5000)
+        user["wallet"] -= lost  # wallet can go negative
         target["wallet"] += lost
         set_cooldown(uid, "rob")
         save_data()
-        embed = discord.Embed(title="❌ Rob Failed!", description=f"You were fined **{lost} moneh** which goes to {member.name}\n💰 Wallet may go negative: {user['wallet']}", color=discord.Color.red())
+        embed = discord.Embed(title="❌ Rob Failed!", description=f"You were fined **{lost} moneh** which goes to {member.name}\n💰 Wallet may go negative!", color=discord.Color.red())
         await interaction.response.send_message(embed=embed)
 
 # -------- Owner Only Command --------
@@ -235,16 +225,38 @@ async def adjust_balance(interaction: discord.Interaction, member: discord.Membe
         await interaction.response.send_message("❌ You are not the owner!", ephemeral=True)
         return
     user = get_user(member.id)
-    user["wallet"] += amount  # can go negative
+    user["wallet"] += amount  # wallet can go negative
     save_data()
     embed = discord.Embed(
         title="💰 Balance Adjusted",
-        description=f"{member.name}'s wallet has been adjusted by **{amount} moneh**.\n💰 New Wallet: {user['wallet']}",
+        description=f"{member.name}'s wallet has been adjusted by **{amount} moneh**.\n💰 New Wallet: {user['wallet']} moneh",
         color=discord.Color.green()
     )
     await interaction.response.send_message(embed=embed)
 
-# -------- Leaderboards --------
+# -------- Cooldown Command --------
+@tree.command(name="cooldown", description="Check cooldowns for all commands")
+async def cooldown(interaction: discord.Interaction):
+    uid = interaction.user.id
+    user = get_user(uid)
+    cd_times = {
+        "daily": 86400,
+        "work": 300,
+        "beg": 600,
+        "crime": 1800,
+        "search": 900,
+        "rob": 7200
+    }
+    embed = discord.Embed(title="⏱ Command Cooldowns", color=discord.Color.blurple())
+    for cmd, cd in cd_times.items():
+        remaining = check_cooldown(uid, cmd, cd)
+        if remaining > 0:
+            embed.add_field(name=cmd.capitalize(), value=f"{format_cooldown(remaining)} left", inline=True)
+        else:
+            embed.add_field(name=cmd.capitalize(), value="Ready ✅", inline=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# -------- Leaderboards (Fixed) --------
 @tree.command(name="leaderboard_server", description="Top 10 richest users in this server")
 async def leaderboard_server(interaction: discord.Interaction):
     guild = interaction.guild
@@ -260,32 +272,11 @@ async def leaderboard_server(interaction: discord.Interaction):
         for i, (name, amount) in enumerate(entries[:10], start=1):
             embed.add_field(name=f"{i}. {name}", value=f"{amount:,} moneh", inline=False)
     else:
-        embed.description = "No users with moneh data in this server!"
+        embed.description = "No users with moneh data currently in this server!"
     await interaction.response.send_message(embed=embed)
 
 @tree.command(name="leaderboard_global", description="Top 10 richest users globally")
 async def leaderboard_global(interaction: discord.Interaction):
-    entries = [(uid, info["wallet"] + info["bank"]) for uid, info in data.items()]
-    entries.sort(key=lambda x: x[1], reverse=True)
-    embed = discord.Embed(title="🌎 Global Leaderboard", color=discord.Color.gold())
-    count = 0
-    for uid, amount in entries:
-        user = bot.get_user(int(uid))
-        if user:
-            count += 1
-            embed.add_field(name=f"{count}. {user.name}", value=f"{amount:,} moneh", inline=False)
-            if count >= 10:
-                break
-    if count == 0:
-        embed.description = "No global users found!"
-    await interaction.response.send_message(embed=embed)
-
-# -------- On Ready --------
-@bot.event
-async def on_ready():
-    print(f"Bot online as {bot.user}")
-    await tree.sync()
-    print("Slash commands synced!")
-
-# -------- Run Bot --------
-bot.run(os.getenv("TOKEN"))
+    entries = []
+    for uid, info in data.items():
+        total = info
